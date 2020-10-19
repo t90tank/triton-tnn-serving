@@ -842,7 +842,6 @@ TRITONBACKEND_ModelInstanceExecute(
       // Step 1. Input and output have same datatype and shape...
       //TNNDEMO 改变Respons的datatype，shape，dims_count
       //这里的shape,dims_count通过TNNProcessor提供的方法得到,datatype默认为float
-      std::cout<<"0\n"; 
       TRITONBACKEND_Output* output;
       TRITONSERVER_DataType output_datatype = TRITONSERVER_DataType::TRITONSERVER_TYPE_FP32; 
       long *output_shape = nullptr; 
