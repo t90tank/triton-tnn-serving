@@ -26,5 +26,6 @@ docker run -p8000:8000 -p8001:8001 -p8002:8002 -it -v $(pwd)/my_models:/models n
 
 client
 ```
+cd tnnserving_client
 python3 image_client.py
 ```
