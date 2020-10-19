@@ -19,3 +19,11 @@ Use cmake to build and install in a local directory.
 You need to change some codes to make it work, see here for more information.
 
 https://iwiki.woa.com/pages/viewpage.action?pageId=370600113
+
+
+
+server
+docker run -p8000:8000 -p8001:8001 -p8002:8002 -it -v $(pwd)/my_models:/models nvcr.io/nvidia/tritonserver:20.09-py3 tritonserver --model-store=/models
+
+client
+python3 image_client.py
