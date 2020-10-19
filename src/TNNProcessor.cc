@@ -67,7 +67,8 @@ bool TNNProcessor::GetOutputShape(long **output_shape, int *output_dims_count) {
 
   //将vector<int>转化为vector<long>，建议后面和triton商量改变接口，不然浪费时间和效率
   //by XiGao
-  output_shape_buffer = std::vector<long>(begin(output_mat.get()->GetDims()), end(output_mat.get()->GetDims())); 
+  output_shape_buffer.clear(); 
+  for (auto i : output_mat->GetDims()) output_shape_buffer.push_back(i);
   *output_shape = output_shape_buffer.data(); 
   *output_dims_count = output_mat.get()->GetDims().size(); 
   return true; 

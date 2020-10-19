@@ -126,6 +126,7 @@ target_link_libraries(triton-tnn-backend
   PRIVATE
     tnn
 )
+#重要！这里是瞎写的！by xigao
 set_target_properties(triton-tnn-backend PROPERTIES INSTALL_RPATH "/models/test")
 
 set_target_properties(
