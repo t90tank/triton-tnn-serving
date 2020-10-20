@@ -32,10 +32,13 @@ bool TNNProcessor::Create(const std::string &name,
   processor = std::make_shared<TNNProcessor>(name, device_id, nchw);
   std::string proto_content = fdLoadFile(path + "/proto.tnnproto"); 
   std::string model_content = fdLoadFile(path + "/model.tnnmodel");
+  //多线程的init有些不稳定，待解决……
+  std::cout<<name<<" start init!\n";
   auto status = processor->Init(proto_content, 
                                 model_content, 
                                 "", 
                                 TNNComputeUnitsCPU);
+  std::cout<<name<<" finish init!\n"; 
   if (status != TNN_NS::TNN_OK) return false; 
   return true;
 }

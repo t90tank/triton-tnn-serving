@@ -12,12 +12,12 @@ if len(sys.argv) >= 2:
 color_img=cv2.imread(image)
 data = json.dumps(color_img.tolist())
 
-r = requests.get('http://localhost:8000/v2/models/test')
+r = requests.get('http://localhost:8000/v2/models/newtest')
 print(r.text)
 
 data = '{"inputs":[{"name":"IN","datatype":"UINT8","shape":[224,224,3],"data":'+data+'}]}'
 
-r = requests.post('http://localhost:8000/v2/models/test/infer', data=data)
+r = requests.post('http://localhost:8000/v2/models/newtest/infer', data=data)
 print(r.text)
 
 data = json.loads(r.text)

@@ -567,9 +567,12 @@ TRITONBACKEND_ModelInstanceInitialize(TRITONBACKEND_ModelInstance* instance)
 
   // With each instance we create a ModelInstanceState object and
   // associate it with the TRITONBACKEND_ModelInstance.
+  std::cout<<name<<" start!\n"; 
   ModelInstanceState* instance_state;
   RETURN_IF_ERROR(
       ModelInstanceState::Create(model_state, instance, &instance_state));
+      
+  std::cout<<name<<" success!\n"; 
   RETURN_IF_ERROR(TRITONBACKEND_ModelInstanceSetState(
       instance, reinterpret_cast<void*>(instance_state)));
 
@@ -580,6 +583,7 @@ TRITONBACKEND_ModelInstanceInitialize(TRITONBACKEND_ModelInstance* instance)
       instance_state->Kind() == TRITONSERVER_INSTANCEGROUPKIND_CPU,
       TRITONSERVER_ERROR_INVALID_ARG,
       std::string("'tnn' backend only supports CPU instances"));
+
 
   return nullptr;  // success
 }

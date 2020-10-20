@@ -14,10 +14,11 @@ TNN版本，见src/tnn/version.h
 docker pull nvcr.io/nvidia/tritonserver:20.09-py3
 ```
 
-进入triton-tnn-serving文件夹，并利用镜像运行服务，将准备好的模型文件夹my_models挂载到models目录，tritonserver将自动加载
+进入triton-tnn-serving文件夹，并利用镜像运行服务，将准备好的模型文件夹my_models挂载到models目录，my_lib挂载到默认的lib目录，tritonserver将自动加载
 ```
-docker run -p8000:8000 -p8001:8001 -p8002:8002 -it -v $(pwd)/my_models:/models nvcr.io/nvidia/tritonserver:20.09-py3 tritonserver --model-store=/models
+docker run -p8000:8000 -p8001:8001 -p8002:8002 -it -v $(pwd)/my_models:/models -v $(pwd)/my_libs:/opt/tritonserver/backends/tnn nvcr.io/nvidia/tritonserver:20.09-py3 tritonserver --model-store=/models
 ```
+目前多模型有些不稳定，可能要多跑几次
 
 ### python客户端（未完善功能）：
 
@@ -41,25 +42,30 @@ python3 image_client.py pics/dog.png
 smartbuild.sh
 ```
 编译结果为build/install/backends/tnn/libtriton_tnn.so
+目前smartbuild.sh会默认将新生成的so复制到./my_libs下覆盖原本的库
 
 # 设置模型文件夹
 
 ### 请先阅读tritoon-inference-server手册了解模型文件夹
 阅读https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/model_repository.html 以了解更多关于triton-inference-server模型文件夹的架构
-阅读https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/backend.html#backend-shared-library 以了解动态链接库libtriton_tnn.so被加载的逻辑
 
 ### 手动设置模型文件夹
-本项目中./my_models为一个模型文件夹的例子。目前，暂定tnn-backend通过proto.tnnproto，model.tnnproto两个文件来加载TNN格式的网络结构，因此一个模型应该包含proto.tnnproto，model.tnnmodel两个文件。将编译好的libtriton_tnn.so也放在对应位置。构建好文件目录后，调整config.pbtxt，配置backend为tnn，尚未支持多batch的功能，所以将max_batch_size设置为0。
+本项目中./my_models为一个模型文件夹的例子。目前，暂定tnn-backend通过proto.tnnproto，model.tnnproto两个文件来加载TNN格式的网络结构，因此一个模型应该包含proto.tnnproto，model.tnnmodel两个文件。构建好文件目录后，调整config.pbtxt，配置backend为tnn，尚未支持多batch的功能，所以将max_batch_size设置为0。
 
 总结必需的文件：
 - config.pbtxt 配置文件
-- libtriton_tnn.so tnn-backend编译得到的动态链接库
 - proto.tnnproto TNN模型文件
 - model.tnnmodel TNN模型文件
 
+
+# 设置动态链接库
+阅读https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/backend.html#backend-shared-library 以了解动态链接库libtriton_tnn.so被加载的逻辑
+
+本项目中./my_lib为一个动态库的例子，里面包含本项目的动态链接库和TNN的动态链接库，在运行镜像时挂载
+
+libtriton_tnn.so tnn-backend编译得到的动态链接库，将其挂载到对应位置即可，默认该so会在/opt/tritonserver/backends/tnn/下寻找TNN编译得到的动来链接库libTNN.so，阅读CMakeLists.txt以修改此逻辑
 ### TODO：
-TNN-serving正式上线后，TNN编译得到得动态链接库libTNN.so应该存储在镜像固定路径下（其余triton-inference-server的动态链接库有指定目录），但目前没有制作TNN-serving的镜像，所以TNN的动态链接库暂时直接暴露在模型文件夹下。导致模型挂载目录名不能随意改变。
-目前如果挂载多个tnn模型会重复加载动态链接库报错
+TNN-serving正式上线后，TNN编译得到得动态链接库libTNN.so和本项目的libtriton_tnn.so应该存储在镜像固定路径下/opt/tritonserver/backends/tnn/，无需挂载，但目前没有制作TNN-serving的镜像
 
 # 源码解析
 

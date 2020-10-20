@@ -98,9 +98,7 @@ add_library(
 
 target_include_directories(
   triton-tnn-backend
-#TNNDEMO : should not be PRIVATE
-  # PRIVATE
-  PUBLIC
+  PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
@@ -127,7 +125,7 @@ target_link_libraries(triton-tnn-backend
     tnn
 )
 #重要！这里是瞎写的！by xigao
-set_target_properties(triton-tnn-backend PROPERTIES INSTALL_RPATH "/models")
+set_target_properties(triton-tnn-backend PROPERTIES INSTALL_RPATH "/opt/tritonserver/backends/tnn/")
 
 set_target_properties(
   triton-tnn-backend PROPERTIES
