@@ -21,16 +21,15 @@ docker run -p8000:8000 -p8001:8001 -p8002:8002 -it -v $(pwd)/my_models:/models n
 
 ### python客户端（未完善功能）：
 
-运行客户端，将已经转换的图片数据data.txt发送给triton的http接口，
+运行客户端
 
 ```
-cd tnnserving_client
 python3 image_client.py
 ```
 
-如果想要查看其他图片分类结果，可以将其他图片通过jpgtodata.py转换为data.txt，修改jpgtodata源码，并运行：
+想要查看自定义图片分类结果
 ```
-python3 jpgtodata.py 
+python3 image_client.py pics/dog.png
 ```
 目前只支持224X224的图片大小，其他图片需要手动调整大小后再发送
 
