@@ -7,7 +7,7 @@ import requests
 image = "pics/tiger_cat_2.jpg"
 
 if len(sys.argv) >= 2:
-  image = sys.argv[0]
+  image = sys.argv[1]
 
 color_img=cv2.imread(image)
 data = json.dumps(color_img.tolist())
