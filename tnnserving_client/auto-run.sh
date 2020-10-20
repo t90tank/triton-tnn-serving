@@ -1,4 +1,4 @@
 while (true)
 do
-python3 image_client.py
+python3 datatoserver.py
 done 

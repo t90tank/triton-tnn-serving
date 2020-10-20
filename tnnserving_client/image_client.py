@@ -1,17 +1,26 @@
-import requests
+import cv2
+import numpy as np
+import sys
 import json
+import requests
+
+image = "pics/tiger_cat_2.jpg"
+
+if len(sys.argv) >= 2:
+  image = sys.argv[0]
+
+color_img=cv2.imread(image)
+data = json.dumps(color_img.tolist())
 
 r = requests.get('http://localhost:8000/v2/models/test')
 print(r.text)
-f = open("data.txt", 'r')
-ss = f.read()
-d = '{"inputs":[{"name":"IN","datatype":"UINT8","shape":[224,224,3],"data":'+ss+'}]}'
-r = requests.post('http://localhost:8000/v2/models/test/infer', data=d)
+
+data = '{"inputs":[{"name":"IN","datatype":"UINT8","shape":[224,224,3],"data":'+data+'}]}'
+
+r = requests.post('http://localhost:8000/v2/models/test/infer', data=data)
 print(r.text)
 
 data = json.loads(r.text)
-
-# print(data)
 
 answer = data['outputs'][0]['data']
 
