@@ -49,8 +49,7 @@ smartbuild.sh
 阅读https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/backend.html#backend-shared-library 以了解动态链接库libtriton_tnn.so被加载的逻辑
 
 ### 手动设置模型文件夹
-本项目中./my_models为一个模型文件夹的例子,注意因为TNN动态链接库libTNN.so的某些原因，现在不能改变模型名称"test"，请勿修改文件夹结构或模型名称。
-目前，暂定tnn-backend通过proto.tnnproto，model.tnnproto两个文件来加载TNN格式的网络结构，因此一个模型应该包含proto.tnnproto，model.tnnmodel两个文件。将编译好的libtriton_tnn.so也放在对应位置。构建好文件目录后，调整config.pbtxt，配置backend为tnn，，尚未支持多batch的功能，所以将max_batch_size设置为0。
+本项目中./my_models为一个模型文件夹的例子。目前，暂定tnn-backend通过proto.tnnproto，model.tnnproto两个文件来加载TNN格式的网络结构，因此一个模型应该包含proto.tnnproto，model.tnnmodel两个文件。将编译好的libtriton_tnn.so也放在对应位置。构建好文件目录后，调整config.pbtxt，配置backend为tnn，尚未支持多batch的功能，所以将max_batch_size设置为0。
 
 总结必需的文件：
 - config.pbtxt 配置文件
@@ -59,7 +58,8 @@ smartbuild.sh
 - model.tnnmodel TNN模型文件
 
 ### TODO：
-TNN-serving正式上线后，TNN编译得到得动态链接库libTNN.so应该存储在镜像固定路径下（其余triton-inference-server的动态链接库有指定目录），但目前没有制作TNN-serving的镜像，所以TNN的动态链接库暂时直接暴露在模型文件夹下。导致模型结构不能随意改变。
+TNN-serving正式上线后，TNN编译得到得动态链接库libTNN.so应该存储在镜像固定路径下（其余triton-inference-server的动态链接库有指定目录），但目前没有制作TNN-serving的镜像，所以TNN的动态链接库暂时直接暴露在模型文件夹下。导致模型挂载目录名不能随意改变。
+目前如果挂载多个tnn模型会重复加载动态链接库报错
 
 # 源码解析
 
