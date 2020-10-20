@@ -3,7 +3,7 @@
 #include <string>
 #include <fstream>
 
-namespace TNN_DEMO {
+namespace TNN_FOR_TRITION {
 
 std::string fdLoadFile(std::string path) {
   std::ifstream file(path, std::ios::in);
@@ -27,8 +27,8 @@ std::string fdLoadFile(std::string path) {
 bool TNNProcessor::Create(const std::string &name,
                           const int device_id, 
                           const std::string &path,
-                          std::shared_ptr<TNNProcessor> &processor, 
-                          std::vector<int> nchw) {
+                          const std::vector<int> &nchw,
+                          std::shared_ptr<TNNProcessor> &processor) {
   processor = std::make_shared<TNNProcessor>(name, device_id, nchw);
   std::string proto_content = fdLoadFile(path + "/proto.tnnproto"); 
   std::string model_content = fdLoadFile(path + "/model.tnnmodel");
@@ -143,7 +143,7 @@ TNN_NS::Status TNNProcessor::Init(const std::string &proto_content, const std::s
   return status;
 }
 
-TNN_NS::Status TNNProcessor::Forward(std::shared_ptr<TNN_NS::Mat> input,
+TNN_NS::Status TNNProcessor::Forward(const std::shared_ptr<TNN_NS::Mat> input,
                                     std::shared_ptr<TNN_NS::Mat> &output) {
 
   // step 1. set input mat
@@ -165,4 +165,4 @@ TNN_NS::Status TNNProcessor::Forward(std::shared_ptr<TNN_NS::Mat> input,
   return TNN_NS::TNN_OK;
 }
 
-} // namespace TNN_DEMO
+} // namespace TNN_FOR_TRITION

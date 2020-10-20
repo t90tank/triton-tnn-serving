@@ -90,7 +90,7 @@ class ModelState {
   TRITONSERVER_Error* ValidateModelConfig();
   
   //TNNDEMO Get the nchw from config for TNN
-  std::vector<int> GetInputSize(); 
+  std::vector<int> GetNCHW(); 
 
  private:
   ModelState(
@@ -230,7 +230,7 @@ ModelState::ValidateModelConfig()
 }
 
 //TNNDEMO 因为model_config_是private类型，返回input_size需要特殊的实现
-std::vector<int> ModelState::GetInputSize() {
+std::vector<int> ModelState::GetNCHW() {
   //get input shape from config
   common::TritonJson::Value inputs, input;
   model_config_.MemberAsArray("input", &inputs); 
@@ -242,13 +242,15 @@ std::vector<int> ModelState::GetInputSize() {
   std::vector<int> nchw = {1}; 
   for (auto x : input_shape) nchw.push_back(x); 
   reverse(next(nchw.begin()), nchw.end()); 
+
+  //输出调试信息，得到的nchw
   std::string S_nchw = "["; 
   for (auto x : nchw) S_nchw = S_nchw+std::to_string(x)+','; 
   S_nchw.pop_back(); 
   S_nchw.push_back(']'); 
   LOG_MESSAGE(
       TRITONSERVER_LOG_INFO,
-      (std::string("TRITONBACKEND_MODEL_GETINPUTSIZE: ") + S_nchw).c_str());
+      (std::string("TRITONBACKEND_MODEL_NCHW: ") + S_nchw).c_str());
   return nchw; 
 }
 
@@ -276,7 +278,7 @@ class ModelInstanceState {
   TRITONSERVER_InstanceGroupKind Kind() const { return kind_; }
   int32_t DeviceId() const { return device_id_; }
   //TNNDEMO 返回TNNProcessor处理器
-  std::shared_ptr<TNN_DEMO::TNNProcessor> GetProcessor() const {return tnn_processor_; }
+  std::shared_ptr<TNN_FOR_TRITION::TNNProcessor> GetProcessor() const {return tnn_processor_; }
 
   // Get the state of the model that corresponds to this instance.
   ModelState* StateForModel() const { return model_state_; }
@@ -297,7 +299,7 @@ class ModelInstanceState {
   const int32_t device_id_;
 
   //TNNDEMO 在这里添加一个模型实例的TNN处理器，执行与TNN相关的模型网络加载，运行配置等逻辑
-  std::shared_ptr<TNN_DEMO::TNNProcessor> tnn_processor_; 
+  std::shared_ptr<TNN_FOR_TRITION::TNNProcessor> tnn_processor_; 
 
 };
 
@@ -314,10 +316,10 @@ TRITONSERVER_Error* ModelInstanceState::CreateTNNProcessor() {
   std::string path_version; 
   ss>>path_version; 
 
-  auto nchw = model_state_->GetInputSize(); 
+  auto nchw = model_state_->GetNCHW(); 
 
   RETURN_ERROR_IF_FALSE(
-      TNN_DEMO::TNNProcessor::Create(name_, device_id_, std::string(path_version), tnn_processor_, nchw) , 
+      TNN_FOR_TRITION::TNNProcessor::Create(name_, device_id_, std::string(path_version), nchw, tnn_processor_) , 
       TRITONSERVER_ERROR_NOT_FOUND, 
       std::string("Can not create TNNProcessor using path '") + 
       std::string(path_version) +
@@ -828,37 +830,43 @@ TRITONBACKEND_ModelInstanceExecute(
               request, "IN", in_buffer.data(),
               &input_byte_size));
 
+      //核心步骤，通过Processor Run，计算得到output_TNN，
+      //注意：该部分内存缓冲在Processor类里，由Processor释放，一但释放processor后将访问不到该块内存
       RETURN_ERROR_IF_FALSE(
           instance_state->GetProcessor()->Run(in_buffer.data(), &output_TNN), 
           TRITONSERVER_ERROR_UNKNOWN,
           std::string("instance_state->GetProcessor()->Run() unsuccessful!") );  
 
-      //TNN_DEMO 新增的调试信息，确定TNN顺利运行
+      //TNNDEMO 新增的调试信息，确定TNN顺利运行
       LOG_MESSAGE(
         TRITONSERVER_LOG_INFO,
         (std::string("Run TNN model ") + model_state->Name() + ", instance " +
         instance_state->Name() + std::string(" successful")).c_str());
 
-      // Step 1. Input and output have same datatype and shape...
-      //TNNDEMO 改变Respons的datatype，shape，dims_count
+      // Step 1. 
+      //设置Respons的datatype，shape，dims_count
       //这里的shape,dims_count通过TNNProcessor提供的方法得到,datatype默认为float
       TRITONBACKEND_Output* output;
       TRITONSERVER_DataType output_datatype = TRITONSERVER_DataType::TRITONSERVER_TYPE_FP32; 
       long *output_shape = nullptr; 
       int output_dims_count = 0; 
+
+      //TNNPrcocessor需要提供接口得到输出的大小
       RETURN_ERROR_IF_FALSE(
         instance_state->GetProcessor()->GetOutputShape(&output_shape, &output_dims_count),
         TRITONSERVER_ERROR_UNKNOWN,
         std::string("Can not get outputshape from TNNProcessor!")); 
 
-      //TNN_DEMO 计算output size 大小，在step 2中使用，这里一起计算以输出调试信息
+      //计算output size 大小，在step 2中使用，这里一起计算以输出调试信息
       int output_byte_size = 0; 
       RETURN_ERROR_IF_FALSE(
         instance_state->GetProcessor()->GetOutputSize(&output_byte_size),
         TRITONSERVER_ERROR_UNKNOWN,
         std::string("Can not get outputsize from TNNProcessor!")); 
 
-      //TNN_DEMO 新增的调试信息，输出output的配置
+      //新增的调试信息，输出output的配置信息，
+      //这里的shape只是提供给triton计算bytesize，
+      //最终还是按照config.pbtxt中的格式传递给http/grpc接口
       LOG_MESSAGE(
         TRITONSERVER_LOG_INFO,
         (std::string("\toutput ") + requested_output_name +
@@ -869,9 +877,6 @@ TRITONBACKEND_ModelInstanceExecute(
       
       GUARDED_RESPOND_IF_ERROR(
           responses, r,
-          // TRITONBACKEND_ResponseOutput(
-          //     response, &output, requested_output_name, input_datatype,
-          //     input_shape, input_dims_count));
           TRITONBACKEND_ResponseOutput(
               response, &output, requested_output_name, output_datatype,
               output_shape, output_dims_count));
@@ -917,35 +922,6 @@ TRITONBACKEND_ModelInstanceExecute(
 
       //TNNDEMO 改动Step3为Copy output_TNN -> output_buffer
       memcpy(output_buffer, output_TNN, output_byte_size); 
-
-      // Step 3. Copy input -> output. We can only handle if the input
-      // buffers are on CPU so fail otherwise.
-
-      // size_t output_buffer_offset = 0;
-      // for (uint32_t b = 0; b < input_buffer_count; ++b) {
-      //   const void* input_buffer = nullptr;
-      //   uint64_t buffer_byte_size = 0;
-      //   TRITONSERVER_MemoryType input_memory_type = TRITONSERVER_MEMORY_CPU;
-      //   int64_t input_memory_type_id = 0;
-      //   GUARDED_RESPOND_IF_ERROR(
-      //       responses, r,
-      //       TRITONBACKEND_InputBuffer(
-      //           input, b, &input_buffer, &buffer_byte_size, &input_memory_type,
-      //           &input_memory_type_id));
-      //   if ((responses[r] == nullptr) ||
-      //       (input_memory_type == TRITONSERVER_MEMORY_GPU)) {
-      //     GUARDED_RESPOND_IF_ERROR(
-      //         responses, r,
-      //         TRITONSERVER_ErrorNew(
-      //             TRITONSERVER_ERROR_UNSUPPORTED,
-      //             "failed to get input buffer in CPU memory"));
-      //   }
-
-      //   memcpy(
-      //       reinterpret_cast<char*>(output_buffer) + output_buffer_offset,
-      //       input_buffer, buffer_byte_size);
-      //   output_buffer_offset += buffer_byte_size;
-      // }
 
       if (responses[r] == nullptr) {
         LOG_MESSAGE(
