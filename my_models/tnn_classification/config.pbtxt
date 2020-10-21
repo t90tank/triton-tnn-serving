@@ -1,0 +1,17 @@
+name: "tnn_classification"
+backend: "tnn"
+max_batch_size: 0
+input [
+  {
+    name: "data"
+    data_type: TYPE_UINT8
+    dims: [ 224, 224, 3 ]
+  }
+]
+output [
+  {
+    name: "squeezenet0_flatten0_reshape0"
+    data_type: TYPE_FP32
+    dims: [ 1000 ]
+  }
+]

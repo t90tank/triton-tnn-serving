@@ -32,7 +32,7 @@
 #include <sstream>
 #include <algorithm>
 
-namespace triton { namespace backend { namespace tnn {
+namespace triton { namespace backend { namespace TNN_backend {
 
 //
 // Simple backend that demonstrates the TRITONBACKEND API for a
@@ -62,6 +62,9 @@ namespace triton { namespace backend { namespace tnn {
     }                                                                   \
   } while (false)
 
+//TNNDEMO
+using InputShapesMap = std::map<std::string, std::vector<int>>;
+
 //
 // ModelState
 //
@@ -90,7 +93,7 @@ class ModelState {
   TRITONSERVER_Error* ValidateModelConfig();
   
   //TNNDEMO Get the nchw from config for TNN
-  std::vector<int> GetNCHW(); 
+  std::shared_ptr<InputShapesMap> GetInputShape(); 
 
  private:
   ModelState(
@@ -189,21 +192,21 @@ ModelState::ValidateModelConfig()
   RETURN_IF_ERROR(model_config_.MemberAsArray("input", &inputs));
   RETURN_IF_ERROR(model_config_.MemberAsArray("output", &outputs));
 
-  // There must be 1 input and 1 output.
-  RETURN_ERROR_IF_FALSE(
-      inputs.ArraySize() == 1, TRITONSERVER_ERROR_INVALID_ARG,
-      std::string("expected 1 input, got ") +
-          std::to_string(inputs.ArraySize()));
-  RETURN_ERROR_IF_FALSE(
-      outputs.ArraySize() == 1, TRITONSERVER_ERROR_INVALID_ARG,
-      std::string("expected 1 output, got ") +
-          std::to_string(outputs.ArraySize()));
-
-  common::TritonJson::Value input, output;
-  RETURN_IF_ERROR(inputs.IndexAsObject(0, &input));
-  RETURN_IF_ERROR(outputs.IndexAsObject(0, &output));
-
   //TNNDEMO 无需判断下述逻辑
+
+  // // There must be 1 input and 1 output.
+  // RETURN_ERROR_IF_FALSE(
+  //     inputs.ArraySize() == 1, TRITONSERVER_ERROR_INVALID_ARG,
+  //     std::string("expected 1 input, got ") +
+  //         std::to_string(inputs.ArraySize()));
+  // RETURN_ERROR_IF_FALSE(
+  //     outputs.ArraySize() == 1, TRITONSERVER_ERROR_INVALID_ARG,
+  //     std::string("expected 1 output, got ") +
+  //         std::to_string(outputs.ArraySize()));
+
+  // common::TritonJson::Value input, output;
+  // RETURN_IF_ERROR(inputs.IndexAsObject(0, &input));
+  // RETURN_IF_ERROR(outputs.IndexAsObject(0, &output));
 
   // // Input and output must have same datatype
   // std::string input_dtype, output_dtype;
@@ -230,28 +233,48 @@ ModelState::ValidateModelConfig()
 }
 
 //TNNDEMO 因为model_config_是private类型，返回input_size需要特殊的实现
-std::vector<int> ModelState::GetNCHW() {
+std::shared_ptr<InputShapesMap> ModelState::GetInputShape() {
   //get input shape from config
+  auto input_shape_map_ = std::make_shared<InputShapesMap>(); 
   common::TritonJson::Value inputs, input;
   model_config_.MemberAsArray("input", &inputs); 
-  inputs.IndexAsObject(0, &input);
-  std::vector<int64_t> input_shape; 
-  backend::ParseShape(input, "dims", &input_shape);
 
-  //convert std::vector<int64_t> to std::vector<int> 
-  std::vector<int> nchw = {1}; 
-  for (auto x : input_shape) nchw.push_back(x); 
-  reverse(next(nchw.begin()), nchw.end()); 
+  for (size_t r = 0; r < inputs.ArraySize(); ++r) {
+    common::TritonJson::Value input; 
+    inputs.IndexAsObject(r, &input);
+    std::string input_name;
+    input.MemberAsString("name", &input_name);  
+    std::vector<int64_t> input_shape_64; 
+    backend::ParseShape(input, "dims", &input_shape_64); 
+    std::vector<int> input_shape(input_shape_64.begin(), input_shape_64.end()); 
 
-  //输出调试信息，得到的nchw
-  std::string S_nchw = "["; 
-  for (auto x : nchw) S_nchw = S_nchw+std::to_string(x)+','; 
-  S_nchw.pop_back(); 
-  S_nchw.push_back(']'); 
-  LOG_MESSAGE(
-      TRITONSERVER_LOG_INFO,
-      (std::string("TRITONBACKEND_MODEL_NCHW: ") + S_nchw).c_str());
-  return nchw; 
+    //警告! 这里我们还不支持多batch，所以动态添加一维batch_size=1
+    LOG_MESSAGE(
+        TRITONSERVER_LOG_INFO,
+        "Warning : do not support batching, so batch_size is set to 1.");
+    input_shape.push_back(1); 
+
+    //注意：TNN格式是nchw，这里需要reverse
+    reverse(input_shape.begin(), input_shape.end()); 
+
+    input_shape_map_->insert(std::pair<std::string, std::vector<int>>(input_name, input_shape)); 
+  }
+  return input_shape_map_; 
+
+  // 暂时弃用convert std::vector<int64_t> to std::vector<int> 
+  // std::vector<int> nchw = {1}; 
+  // for (auto x : input_shape) nchw.push_back(x); 
+  // reverse(next(nchw.begin()), nchw.end()); 
+
+  // //输出调试信息，得到的nchw
+  // std::string S_nchw = "["; 
+  // for (auto x : nchw) S_nchw = S_nchw+std::to_string(x)+','; 
+  // S_nchw.pop_back(); 
+  // S_nchw.push_back(']'); 
+  // LOG_MESSAGE(
+  //     TRITONSERVER_LOG_INFO,
+  //     (std::string("TRITONBACKEND_MODEL_NCHW: ") + S_nchw).c_str());
+  // return nchw; 
 }
 
 //
@@ -316,10 +339,14 @@ TRITONSERVER_Error* ModelInstanceState::CreateTNNProcessor() {
   std::string path_version; 
   ss>>path_version; 
 
-  auto nchw = model_state_->GetNCHW(); 
+  auto input_shapes_map = model_state_->GetInputShape(); 
 
   RETURN_ERROR_IF_FALSE(
-      TNN_FOR_TRITION::TNNProcessor::Create(name_, device_id_, std::string(path_version), nchw, tnn_processor_) , 
+      TNN_FOR_TRITION::TNNProcessor::Create(name_, 
+                                            device_id_, 
+                                            std::string(path_version), 
+                                            input_shapes_map, 
+                                            tnn_processor_), 
       TRITONSERVER_ERROR_NOT_FOUND, 
       std::string("Can not create TNNProcessor using path '") + 
       std::string(path_version) +
@@ -614,6 +641,9 @@ TRITONBACKEND_ModelInstanceExecute(
     TRITONBACKEND_ModelInstance* instance, TRITONBACKEND_Request** requests,
     const uint32_t request_count)
 {
+  LOG_MESSAGE(
+      TRITONSERVER_LOG_INFO,
+      "Hello, I am executing!");
   // Triton will not call this function simultaneously for the same
   // 'instance'. But since this backend could be used by multiple
   // instances from multiple models the implementation needs to handle
@@ -727,214 +757,141 @@ TRITONBACKEND_ModelInstanceExecute(
          ", requested_output_count = " + std::to_string(requested_output_count))
             .c_str());
 
-    const char* input_name;
-    GUARDED_RESPOND_IF_ERROR(
-        responses, r,
-        TRITONBACKEND_RequestInputName(request, 0 /* index */, &input_name));
+    //TNN_DEMO step1. 我们需要拉入所有inputs
+    //首先拿到input_name
+    //通过input_name拿到input
+    //解析input得到大量信息
+    //因为input内存可能不连续，将其复制到申请的vector
+    //将其加入Processor的Mat中
+    for (size_t i = 0; i < input_count; ++i) {
 
-    TRITONBACKEND_Input* input = nullptr;
-    GUARDED_RESPOND_IF_ERROR(
-        responses, r, TRITONBACKEND_RequestInput(request, input_name, &input));
-
-    // We also validated that the model configuration specifies only a
-    // single output, but the request is not required to request any
-    // output at all so we only produce an output if requested.
-    const char* requested_output_name = nullptr;
-    if (requested_output_count > 0) {
+      //按照下标i拉取input_name和input
+      const char* input_name;
       GUARDED_RESPOND_IF_ERROR(
           responses, r,
-          TRITONBACKEND_RequestOutputName(
-              request, 0 /* index */, &requested_output_name));
-    }
+          TRITONBACKEND_RequestInputName(request, i, &input_name));
+      TRITONBACKEND_Input* input = nullptr;
+      GUARDED_RESPOND_IF_ERROR(
+          responses, r, TRITONBACKEND_RequestInput(request, input_name, &input));
 
-    // If an error response was sent while getting the input or
-    // requested output name then display an error message and move on
-    // to next request.
-    if (responses[r] == nullptr) {
+      //解析input类得到更多信息
+      TRITONSERVER_DataType input_datatype;
+      const int64_t* input_shape;
+      uint32_t input_dims_count;
+      uint64_t input_byte_size;
+      uint32_t input_buffer_count;
+      GUARDED_RESPOND_IF_ERROR(
+          responses, r,
+          TRITONBACKEND_InputProperties(
+              input, nullptr /* input_name */, &input_datatype, &input_shape,
+              &input_dims_count, &input_byte_size, &input_buffer_count));
+
       LOG_MESSAGE(
-          TRITONSERVER_LOG_ERROR,
-          (std::string("request ") + std::to_string(r) +
-           ": failed to read input or requested output name, error response "
-           "sent")
+          TRITONSERVER_LOG_INFO,
+          (std::string("\tinput ") + input_name +
+          ": datatype = " + TRITONSERVER_DataTypeString(input_datatype) +
+          ", shape = " + backend::ShapeToString(input_shape, input_dims_count) +
+          ", byte_size = " + std::to_string(input_byte_size) +
+          ", buffer_count = " + std::to_string(input_buffer_count))
               .c_str());
-      continue;
-    }
-
-    TRITONSERVER_DataType input_datatype;
-    const int64_t* input_shape;
-    uint32_t input_dims_count;
-    uint64_t input_byte_size;
-    uint32_t input_buffer_count;
-    GUARDED_RESPOND_IF_ERROR(
-        responses, r,
-        TRITONBACKEND_InputProperties(
-            input, nullptr /* input_name */, &input_datatype, &input_shape,
-            &input_dims_count, &input_byte_size, &input_buffer_count));
-    if (responses[r] == nullptr) {
-      LOG_MESSAGE(
-          TRITONSERVER_LOG_ERROR,
-          (std::string("request ") + std::to_string(r) +
-           ": failed to read input properties, error response sent")
-              .c_str());
-      continue;
-    }
-
-    LOG_MESSAGE(
-        TRITONSERVER_LOG_INFO,
-        (std::string("\tinput ") + input_name +
-         ": datatype = " + TRITONSERVER_DataTypeString(input_datatype) +
-         ", shape = " + backend::ShapeToString(input_shape, input_dims_count) +
-         ", byte_size = " + std::to_string(input_byte_size) +
-         ", buffer_count = " + std::to_string(input_buffer_count))
-            .c_str());
-    LOG_MESSAGE(
-        TRITONSERVER_LOG_INFO,
-        (std::string("\trequested_output ") + requested_output_name).c_str());
-
-    // For statistics we need to collect the total batch size of all
-    // the requests. If the model doesn't support batching then each
-    // request is necessarily batch-size 1. If the model does support
-    // batching then the first dimension of the shape is the batch
-    // size.
-    if (supports_batching && (input_dims_count > 0)) {
-      total_batch_size += input_shape[0];
-    } else {
-      total_batch_size++;
-    }
-
-    // We only need to produce an output if it was requested.
-
-    if (requested_output_count > 0) {
-      // This backend simply copies the input tensor to the output
-      // tensor. The input tensor contents are available in one or
-      // more contiguous buffers. To do the copy we:
-      //
-      //   1. Create an output tensor in the response.
-      //
-      //   2. Allocate appropriately sized buffer in the output
-      //      tensor.
-      //
-      //   3. Iterate over the input tensor buffers and copy the
-      //      contents into the output buffer.
-      TRITONBACKEND_Response* response = responses[r];
-
-      // TNNDEMO : step0 先结算出结果output_TNN，然后计算shape,dims_count
-      // 最后将output_TNN复制到output_buffer。
-      // Warning:uutput_TNN复制到output_buffer这步浪费时间并且占用内存或显存
-      // 建议triton新增setOutputBuffer或TNN新增可以指定网络输出地址接口
-      // by XiGao
       
-      void *output_TNN = nullptr; 
-
       //将input_buffer复制到连续内存
       std::vector<char> in_buffer(input_byte_size / sizeof(char));
       GUARDED_RESPOND_IF_ERROR(
           responses, r,
           ReadInputTensor(
-              request, "IN", in_buffer.data(),
+              request, input_name, in_buffer.data(),
               &input_byte_size));
-
-      //核心步骤，通过Processor Run，计算得到output_TNN，
-      //注意：该部分内存缓冲在Processor类里，由Processor释放，一但释放processor后将访问不到该块内存
+            
+      //设置输入的Mat
       RETURN_ERROR_IF_FALSE(
-          instance_state->GetProcessor()->Run(in_buffer.data(), &output_TNN), 
-          TRITONSERVER_ERROR_UNKNOWN,
-          std::string("instance_state->GetProcessor()->Run() unsuccessful!") );  
-
-      //TNNDEMO 新增的调试信息，确定TNN顺利运行
-      LOG_MESSAGE(
-        TRITONSERVER_LOG_INFO,
-        (std::string("Run TNN model ") + model_state->Name() + ", instance " +
-        instance_state->Name() + std::string(" successful")).c_str());
-
-      // Step 1. 
-      //设置Respons的datatype，shape，dims_count
-      //这里的shape,dims_count通过TNNProcessor提供的方法得到,datatype默认为float
-      TRITONBACKEND_Output* output;
-      TRITONSERVER_DataType output_datatype = TRITONSERVER_DataType::TRITONSERVER_TYPE_FP32; 
-      long *output_shape = nullptr; 
-      int output_dims_count = 0; 
-
-      //TNNPrcocessor需要提供接口得到输出的大小
-      RETURN_ERROR_IF_FALSE(
-        instance_state->GetProcessor()->GetOutputShape(&output_shape, &output_dims_count),
+        instance_state->GetProcessor()->SetInputMat(in_buffer.data(), input_name),
         TRITONSERVER_ERROR_UNKNOWN,
-        std::string("Can not get outputshape from TNNProcessor!")); 
+        std::string("instance_state->SetInputMat() unsuccessful!")); 
 
-      //计算output size 大小，在step 2中使用，这里一起计算以输出调试信息
-      int output_byte_size = 0; 
-      RETURN_ERROR_IF_FALSE(
-        instance_state->GetProcessor()->GetOutputSize(&output_byte_size),
-        TRITONSERVER_ERROR_UNKNOWN,
-        std::string("Can not get outputsize from TNNProcessor!")); 
-
-      //新增的调试信息，输出output的配置信息，
-      //这里的shape只是提供给triton计算bytesize，
-      //最终还是按照config.pbtxt中的格式传递给http/grpc接口
-      LOG_MESSAGE(
-        TRITONSERVER_LOG_INFO,
-        (std::string("\toutput ") + requested_output_name +
-         ": datatype = " + TRITONSERVER_DataTypeString(output_datatype) +
-         ", shape = " + backend::ShapeToString(output_shape, output_dims_count) +
-         ", byte_size = " + std::to_string(output_byte_size)) 
-            .c_str());
-      
-      GUARDED_RESPOND_IF_ERROR(
-          responses, r,
-          TRITONBACKEND_ResponseOutput(
-              response, &output, requested_output_name, output_datatype,
-              output_shape, output_dims_count));
-      if (responses[r] == nullptr) {
-        LOG_MESSAGE(
-            TRITONSERVER_LOG_ERROR,
-            (std::string("request ") + std::to_string(r) +
-             ": failed to create response output, error response sent")
-                .c_str());
-        continue;
+      //batch 相关，尚未调试
+      if (i == 0) {
+        if (supports_batching && (input_dims_count > 0)) {
+          total_batch_size += input_shape[0];
+        } else {
+          total_batch_size++;
+        }
       }
+    }
 
-      // Step 2. Get the output buffer. We request a buffer in CPU
-      // memory but we have to handle any returned type. If we get
-      // back a buffer in GPU memory we just fail the request.
-      void* output_buffer;
-      TRITONSERVER_MemoryType output_memory_type = TRITONSERVER_MEMORY_CPU;
-      int64_t output_memory_type_id = 0;
+    // We only need to produce an output if it was requested.
 
-      GUARDED_RESPOND_IF_ERROR(
-          responses, r,
-          TRITONBACKEND_OutputBuffer(
-              // TNNDEMO申请内存数应该为output_byte_size
-              // 原始代码：output, &output_buffer, input_byte_size, &output_memory_type,
-              // 改为：
-              output, &output_buffer, output_byte_size, &output_memory_type,
-              &output_memory_type_id));
-      if ((responses[r] == nullptr) ||
-          (output_memory_type == TRITONSERVER_MEMORY_GPU)) {
+    if (requested_output_count > 0) {
+
+      //TNNDEMO step.2 前向计算
+      //该步将前一步骤中所有输入做前向计算
+      //计算得到的所有output都以Mat格式存储在Processor中
+      //之后解析即可
+      RETURN_ERROR_IF_FALSE(
+          instance_state->GetProcessor()->Forward(), 
+          TRITONSERVER_ERROR_UNKNOWN,
+          std::string("instance_state->GetProcessor()->Run() unsuccessful!") ); 
+
+      TRITONBACKEND_Response* response = responses[r];
+
+      //TNNDEMO step.3 得到所有outputs并复制到buffer  
+      //枚举所有responses[r]的request的output
+      //得到名称
+      //根据名称在Processor的TNN示例中获取outputMat
+      //TNN返回OutputMat同时返回其他信息和数据指针output_TNN
+      //申请绑定在request上的output
+      //申请绑定在output上的output_buffer
+      //将output_TNN复制到output_buffer中
+      for (size_t i = 0; i < requested_output_count; ++i) {
+        const char* requested_output_name = nullptr;
+          GUARDED_RESPOND_IF_ERROR(
+              responses, r,
+              TRITONBACKEND_RequestOutputName(
+                  request, i /* index */, &requested_output_name));
+        
+        void * output_TNN; 
+        long *output_shape = nullptr; 
+        int output_dims_count = 0; 
+        int output_byte_size = 0; 
+        RETURN_ERROR_IF_FALSE( 
+            instance_state->GetProcessor()->GetOutput(&output_TNN, 
+                                                      &output_shape,
+                                                      &output_dims_count,
+                                                      &output_byte_size,
+                                                      std::string(requested_output_name)),
+            TRITONSERVER_ERROR_UNKNOWN,
+            std::string("instance_state->GetProcessor()->GetOutput() unsuccessful!")); 
+            
+        TRITONSERVER_DataType output_datatype = TRITONSERVER_DataType::TRITONSERVER_TYPE_FP32; 
+
+        //输出output的调试信息
+        LOG_MESSAGE(
+          TRITONSERVER_LOG_INFO,
+          (std::string("\toutput ") + requested_output_name +
+          ": datatype = " + TRITONSERVER_DataTypeString(output_datatype) +
+          ", shape = " + backend::ShapeToString(output_shape, output_dims_count) +
+          ", byte_size = " + std::to_string(output_byte_size)) 
+              .c_str());
+
+        //创建一个output
+        TRITONBACKEND_Output* output;
         GUARDED_RESPOND_IF_ERROR(
             responses, r,
-            TRITONSERVER_ErrorNew(
-                TRITONSERVER_ERROR_UNSUPPORTED,
-                "failed to create output buffer in CPU memory"));
-        LOG_MESSAGE(
-            TRITONSERVER_LOG_ERROR,
-            (std::string("request ") + std::to_string(r) +
-             ": failed to create output buffer in CPU memory, error response "
-             "sent")
-                .c_str());
-        continue;
-      }
+            TRITONBACKEND_ResponseOutput(
+                response, &output, requested_output_name, output_datatype,
+                output_shape, output_dims_count));
 
-      //TNNDEMO 改动Step3为Copy output_TNN -> output_buffer
-      memcpy(output_buffer, output_TNN, output_byte_size); 
-
-      if (responses[r] == nullptr) {
-        LOG_MESSAGE(
-            TRITONSERVER_LOG_ERROR,
-            (std::string("request ") + std::to_string(r) +
-             ": failed to get input buffer in CPU memory, error response "
-             "sent")
-                .c_str());
-        continue;
+        //创建output_buffer
+        void* output_buffer;
+        TRITONSERVER_MemoryType output_memory_type = TRITONSERVER_MEMORY_CPU;
+        int64_t output_memory_type_id = 0;
+        GUARDED_RESPOND_IF_ERROR(
+            responses, r,
+            TRITONBACKEND_OutputBuffer(
+                output, &output_buffer, output_byte_size, &output_memory_type,
+                &output_memory_type_id));
+              
+        memcpy(output_buffer, output_TNN, output_byte_size); 
       }
     }
 
@@ -1023,4 +980,4 @@ TRITONBACKEND_ModelInstanceExecute(
 
 }  // extern "C"
 
-}}} // namespace triton::backend::tnn
+}}} // namespace triton::backend::TNN_backend
