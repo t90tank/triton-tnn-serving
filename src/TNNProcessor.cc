@@ -27,19 +27,10 @@ std::string fdLoadFile(std::string path) {
 bool TNNProcessor::Create(const std::string &name,
                           const int device_id, 
                           const std::string &path,
-                          std::shared_ptr<TNN_NS::InputShapesMap> shapeMap,
                           std::shared_ptr<TNNProcessor> &processor) {
-  processor = std::make_shared<TNNProcessor>(name, device_id, shapeMap);
+  processor = std::make_shared<TNNProcessor>(name, device_id);
   std::string proto_content = fdLoadFile(path + "/proto.tnnproto"); 
   std::string model_content = fdLoadFile(path + "/model.tnnmodel");
-  //多线程的init有些不稳定，待解决……
-  for (auto pp : *(shapeMap)) {
-    std::cout<<pp.first<<std::endl; 
-    std::cout<<"["; 
-    for (auto i : pp.second) 
-      std::cout<<i<<','; 
-    std::cout<<"]\n"; 
-  }
   std::cout<<name<<" start init!\n";
   auto status = processor->Init(proto_content, 
                                 model_content, 
@@ -102,8 +93,13 @@ bool TNNProcessor::Create(const std::string &name,
 //   return true; 
 // }
 
-bool TNNProcessor::SetInputMat(const void *input_buffer, const std::string &input_name) {
-  auto input_mat = std::make_shared<TNN_NS::Mat>(TNN_NS::DEVICE_ARM, TNN_NS::N8UC3, (*shape_map_)[input_name], const_cast<void *>(input_buffer)); 
+bool TNNProcessor::SetInputMat(const void *input_buffer, const std::string &input_name, const std::vector<int> &nchw) {
+  request_input_shape_map_[input_name] = nchw; 
+  std::cout<<"["; 
+  for (auto i : nchw)  
+    std::cout<<i<<','; 
+  std::cout<<"]\n"; 
+  auto input_mat = std::make_shared<TNN_NS::Mat>(TNN_NS::DEVICE_ARM, TNN_NS::N8UC3, nchw, const_cast<void *>(input_buffer)); 
   auto status = instance_->SetInputMat(input_mat, GetConvertParam(input_name));   
   return status == TNN_NS::TNN_OK; 
 }
@@ -134,16 +130,21 @@ bool TNNProcessor::GetOutput(void **output_buffer,
 }
 
 bool TNNProcessor::Forward() {
+  // 因为每次传入图片后input_shape_map有可能改变，所以需要reshape
+  instance_->Reshape(request_input_shape_map_); 
   auto status = instance_->ForwardAsync(nullptr);
   if (status != TNN_NS::TNN_OK) {
       LOGE("instance forward failed %d\n", (int)status);
       return false; 
   }
+  //运算结束后还原原本的值
+  // instance_->Reshape(*instance_input_shape_map_); 
   return true; 
 }
 
 TNN_NS::Status TNNProcessor::Init(const std::string &proto_content, const std::string &model_content,
-                                  const std::string &library_path, TNNComputeUnits units) {
+                                  const std::string &library_path, TNNComputeUnits units, 
+                                  const TNN_NS::InputShapesMap &input_shape) {
   //网络初始化
   TNN_NS::Status status;
   if (!net_) {
@@ -178,7 +179,7 @@ TNN_NS::Status TNNProcessor::Init(const std::string &proto_content, const std::s
   TNN_NS::NetworkConfig network_config;
   network_config.library_path = {library_path};
   network_config.device_type = device_type_;
-  auto instance = net_->CreateInst(network_config, status, *shape_map_);
+  auto instance = net_->CreateInst(network_config, status, input_shape);
   if (status != TNN_NS::TNN_OK || !instance)
   {
     // try device_arm
@@ -186,12 +187,21 @@ TNN_NS::Status TNNProcessor::Init(const std::string &proto_content, const std::s
     {
       device_type_ = TNN_NS::DEVICE_ARM;
       network_config.device_type = TNN_NS::DEVICE_ARM;
-      instance = net_->CreateInst(network_config, status, *shape_map_);
+      instance = net_->CreateInst(network_config, status, input_shape);
     }
   }
   instance_ = instance;
 
-  return status;
+  //清空request_input_shape_map_
+  request_input_shape_map_.clear(); 
+  //我们可以根据网络得到instance_intput_shape_map_，这个决定了能处理的图片大小的上限
+  instance_input_shape_map_.clear(); 
+  TNN_NS::BlobMap input_blobs_map; 
+  status  = instance_->GetAllInputBlobs(input_blobs_map); 
+  for (auto input_blob : input_blobs_map) 
+    instance_input_shape_map_[input_blob.first] = (input_blob.second)->GetBlobDesc().dims; 
+
+  return TNN_NS::TNN_OK;
 }
 
 // TNN_NS::Status TNNProcessor::Forward(const std::shared_ptr<TNN_NS::Mat> input,

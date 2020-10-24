@@ -62,9 +62,6 @@ namespace triton { namespace backend { namespace TNN_backend {
     }                                                                   \
   } while (false)
 
-//TNNDEMO
-using InputShapesMap = std::map<std::string, std::vector<int>>;
-
 //
 // ModelState
 //
@@ -93,7 +90,7 @@ class ModelState {
   TRITONSERVER_Error* ValidateModelConfig();
   
   //TNNDEMO Get the nchw from config for TNN
-  std::shared_ptr<InputShapesMap> GetInputShape(); 
+  // std::shared_ptr<TNN_NS::InputShapesMap> GetInputShape(); 
 
  private:
   ModelState(
@@ -233,49 +230,55 @@ ModelState::ValidateModelConfig()
 }
 
 //TNNDEMO 因为model_config_是private类型，返回input_size需要特殊的实现
-std::shared_ptr<InputShapesMap> ModelState::GetInputShape() {
-  //get input shape from config
-  auto input_shape_map_ = std::make_shared<InputShapesMap>(); 
-  common::TritonJson::Value inputs, input;
-  model_config_.MemberAsArray("input", &inputs); 
+// std::shared_ptr<TNN_NS::InputShapesMap> ModelState::GetInputShape() {
+//   //get input shape from config
+//   auto input_shape_map_ = std::make_shared<TNN_NS::InputShapesMap>(); 
+//   common::TritonJson::Value inputs, input;
+//   model_config_.MemberAsArray("input", &inputs); 
 
-  for (size_t r = 0; r < inputs.ArraySize(); ++r) {
-    common::TritonJson::Value input; 
-    inputs.IndexAsObject(r, &input);
-    std::string input_name;
-    input.MemberAsString("name", &input_name);  
-    std::vector<int64_t> input_shape_64; 
-    backend::ParseShape(input, "dims", &input_shape_64); 
-    std::vector<int> input_shape(input_shape_64.begin(), input_shape_64.end()); 
+//   for (size_t r = 0; r < inputs.ArraySize(); ++r) {
+//     continue; 
+//     common::TritonJson::Value input; 
+//     inputs.IndexAsObject(r, &input);
+//     std::string input_name;
+//     input.MemberAsString("name", &input_name);  
+//     std::vector<int64_t> input_shape_64; 
+//     backend::ParseShape(input, "dims", &input_shape_64); 
+//     // 将只有一维-1的去除， 未来将在输入时验证
+//     // 此处需修改 by XiGao
+//     if (input_shape_64.size() <= 2) continue; 
+//     std::cout<<"input_shape_64.size() = "<<input_shape_64.size()<<std::endl; 
 
-    //警告! 这里我们还不支持多batch，所以动态添加一维batch_size=1
-    LOG_MESSAGE(
-        TRITONSERVER_LOG_INFO,
-        "Warning : do not support batching, so batch_size is set to 1.");
-    input_shape.push_back(1); 
+//     std::vector<int> input_shape(input_shape_64.begin(), input_shape_64.end()); 
 
-    //注意：TNN格式是nchw，这里需要reverse
-    reverse(input_shape.begin(), input_shape.end()); 
+//     //警告! 这里我们还不支持多batch，所以动态添加一维batch_size=1
+//     LOG_MESSAGE(
+//         TRITONSERVER_LOG_INFO,
+//         "Warning : do not support batching, so batch_size is set to 1.");
+//     input_shape.push_back(1); 
 
-    input_shape_map_->insert(std::pair<std::string, std::vector<int>>(input_name, input_shape)); 
-  }
-  return input_shape_map_; 
+//     //注意：TNN格式是nchw，这里需要reverse
+//     reverse(input_shape.begin(), input_shape.end()); 
 
-  // 暂时弃用convert std::vector<int64_t> to std::vector<int> 
-  // std::vector<int> nchw = {1}; 
-  // for (auto x : input_shape) nchw.push_back(x); 
-  // reverse(next(nchw.begin()), nchw.end()); 
+//     input_shape_map_->insert(std::pair<std::string, std::vector<int>>(input_name, input_shape)); 
+//   }
+//   return input_shape_map_; 
 
-  // //输出调试信息，得到的nchw
-  // std::string S_nchw = "["; 
-  // for (auto x : nchw) S_nchw = S_nchw+std::to_string(x)+','; 
-  // S_nchw.pop_back(); 
-  // S_nchw.push_back(']'); 
-  // LOG_MESSAGE(
-  //     TRITONSERVER_LOG_INFO,
-  //     (std::string("TRITONBACKEND_MODEL_NCHW: ") + S_nchw).c_str());
-  // return nchw; 
-}
+//   // 暂时弃用convert std::vector<int64_t> to std::vector<int> 
+//   // std::vector<int> nchw = {1}; 
+//   // for (auto x : input_shape) nchw.push_back(x); 
+//   // reverse(next(nchw.begin()), nchw.end()); 
+
+//   // //输出调试信息，得到的nchw
+//   // std::string S_nchw = "["; 
+//   // for (auto x : nchw) S_nchw = S_nchw+std::to_string(x)+','; 
+//   // S_nchw.pop_back(); 
+//   // S_nchw.push_back(']'); 
+//   // LOG_MESSAGE(
+//   //     TRITONSERVER_LOG_INFO,
+//   //     (std::string("TRITONBACKEND_MODEL_NCHW: ") + S_nchw).c_str());
+//   // return nchw; 
+// }
 
 //
 // ModelInstanceState
@@ -339,13 +342,12 @@ TRITONSERVER_Error* ModelInstanceState::CreateTNNProcessor() {
   std::string path_version; 
   ss>>path_version; 
 
-  auto input_shapes_map = model_state_->GetInputShape(); 
+  // auto input_shapes_map = model_state_->GetInputShape(); 
 
   RETURN_ERROR_IF_FALSE(
       TNN_FOR_TRITION::TNNProcessor::Create(name_, 
                                             device_id_, 
                                             std::string(path_version), 
-                                            input_shapes_map, 
                                             tnn_processor_), 
       TRITONSERVER_ERROR_NOT_FOUND, 
       std::string("Can not create TNNProcessor using path '") + 
@@ -802,10 +804,19 @@ TRITONBACKEND_ModelInstanceExecute(
           ReadInputTensor(
               request, input_name, in_buffer.data(),
               &input_byte_size));
+
+      //通过input_shape和input_dims_count还原nchw
+      std::vector<int> nchw; 
+      for (size_t i = 0; i < input_dims_count; ++i) {
+        std::cout<<"new_feature "<<input_shape[i]<<std::endl;
+        nchw.push_back(input_shape[i]); 
+      }
+      nchw.push_back(1); 
+      std::reverse(nchw.begin(), nchw.end()); 
             
       //设置输入的Mat
       RETURN_ERROR_IF_FALSE(
-        instance_state->GetProcessor()->SetInputMat(in_buffer.data(), input_name),
+        instance_state->GetProcessor()->SetInputMat(in_buffer.data(), input_name, nchw),
         TRITONSERVER_ERROR_UNKNOWN,
         std::string("instance_state->SetInputMat() unsuccessful!")); 
 
@@ -827,6 +838,7 @@ TRITONBACKEND_ModelInstanceExecute(
       //该步将前一步骤中所有输入做前向计算
       //计算得到的所有output都以Mat格式存储在Processor中
       //之后解析即可
+      std::cout<<"Running!\n"; 
       RETURN_ERROR_IF_FALSE(
           instance_state->GetProcessor()->Forward(), 
           TRITONSERVER_ERROR_UNKNOWN,

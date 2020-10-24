@@ -10,9 +10,11 @@ if len(sys.argv) >= 2:
   image = sys.argv[1]
 
 color_img=cv2.imread(image)
-data = json.dumps(color_img.tolist())
+shape = '['+str(color_img.shape)[1:-1]+']'
+print(shape)
+imagedata = json.dumps(color_img.tolist())
 
-data = '{"inputs":[{"name":"data","datatype":"UINT8","shape":[224,224,3],"data":'+data+'}]}'
+data = '{"inputs":[{"name":"data","datatype":"UINT8","shape":'+shape+',"data":'+imagedata+'}]}'
 
 r = requests.post('http://localhost:8000/v2/models/tnn_classification/infer', data=data)
 print(r.text)
