@@ -28,15 +28,8 @@ bool TNNProcessor::Create(const std::string &name,
                           const int device_id, 
                           const std::string &path,
                           std::shared_ptr<TNNProcessor> &processor) {
-  processor = std::make_shared<TNNProcessor>(name, device_id);
-  std::string proto_content = fdLoadFile(path + "/proto.tnnproto"); 
-  std::string model_content = fdLoadFile(path + "/model.tnnmodel");
-  std::cout<<name<<" start init!\n";
-  auto status = processor->Init(proto_content, 
-                                model_content, 
-                                "", 
-                                TNNComputeUnitsCPU);
-  std::cout<<name<<" finish init!\n"; 
+  processor = std::make_shared<TNNProcessor>(name, device_id, path);
+  auto status = processor->Init(TNNComputeUnitsCPU);
   if (status != TNN_NS::TNN_OK) {
     LOGE( "Unable to load following files :\n");
     LOGE( "%s/proto.tnnproto\n", path.c_str()); 
@@ -131,7 +124,6 @@ bool TNNProcessor::GetOutput(void **output_buffer,
 
 bool TNNProcessor::Forward() {
   // 因为每次传入图片后input_shape_map有可能改变，所以需要reshape
-  instance_->Reshape(request_input_shape_map_); 
   auto status = instance_->ForwardAsync(nullptr);
   if (status != TNN_NS::TNN_OK) {
       LOGE("instance forward failed %d\n", (int)status);
@@ -142,9 +134,46 @@ bool TNNProcessor::Forward() {
   return true; 
 }
 
-TNN_NS::Status TNNProcessor::Init(const std::string &proto_content, const std::string &model_content,
-                                  const std::string &library_path, TNNComputeUnits units, 
+bool TNNProcessor::AutoReshape() {
+  bool need_to_reinit = false; 
+  for (auto iter : request_input_shape_map_) {
+    auto input_name = iter.first; 
+    for (size_t i = 0; i < iter.second.size(); ++i) 
+      if (instance_input_shape_map_[input_name][i] < iter.second[i]) {
+        instance_input_shape_map_[input_name][i] = iter.second[i]; 
+        need_to_reinit = true; 
+      }
+  }
+  if (need_to_reinit) {
+    printf("Need to reinit the network bacause the image is larger than before.\n"); 
+    auto status = instance_->DeInit(); 
+    if (status != TNN_NS::TNN_OK) {
+      LOGE("instance_->DeInit() failed %d\n", (int)status); 
+      return false; 
+    }
+    status = Init(TNNComputeUnitsCPU, instance_input_shape_map_); 
+    if (status != TNN_NS::TNN_OK) {
+      LOGE("Auto reinit failed %d\n", (int)status); 
+      return false; 
+    }
+  }
+  else {
+    auto status = instance_->Reshape(request_input_shape_map_); 
+    if (status != TNN_NS::TNN_OK) {
+      LOGE("instance_->Reshape failed %d\n", (int)status); 
+      return false; 
+    }
+  }
+  return true; 
+}
+
+TNN_NS::Status TNNProcessor::Init(TNNComputeUnits units, 
                                   const TNN_NS::InputShapesMap &input_shape) {
+
+                                    
+  std::string proto_content = fdLoadFile(path_ + "/proto.tnnproto"); 
+  std::string model_content = fdLoadFile(path_ + "/model.tnnmodel");
+  std::string library_path = ""; 
   //网络初始化
   TNN_NS::Status status;
   if (!net_) {

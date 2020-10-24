@@ -834,10 +834,17 @@ TRITONBACKEND_ModelInstanceExecute(
 
     if (requested_output_count > 0) {
 
-      //TNNDEMO step.2 前向计算
-      //该步将前一步骤中所有输入做前向计算
+      //TNNDEMO step.2 Reshape 以及前向计算
+      //先根据输入Mat大小决定是否重新分配内存
+      //目前采用自动调整的逻辑，即，如果不够就重新分配
+      //将前一步骤中所有输入做前向计算
       //计算得到的所有output都以Mat格式存储在Processor中
       //之后解析即可
+      RETURN_ERROR_IF_FALSE(
+          instance_state->GetProcessor()->AutoReshape(), 
+          TRITONSERVER_ERROR_UNKNOWN,
+          std::string("instance_state->GetProcessor()->AutoReshape() unsuccessful!") ); 
+
       std::cout<<"Running!\n"; 
       RETURN_ERROR_IF_FALSE(
           instance_state->GetProcessor()->Forward(), 

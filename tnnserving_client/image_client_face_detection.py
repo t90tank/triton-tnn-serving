@@ -4,7 +4,7 @@ import sys
 import json
 import requests
 
-image = "pics/test_face.png"
+image = "pics/test_face.jpg"
 
 if len(sys.argv) >= 2:
   image = sys.argv[1]

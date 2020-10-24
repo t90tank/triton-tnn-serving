@@ -20,12 +20,13 @@ typedef enum{
 class TNNProcessor{
 public:
   TNNProcessor(const std::string &name,
-                const int device_id) : name_(name), device_id_(device_id) {}
+               const int device_id,
+               const std::string &path) : name_(name), device_id_(device_id), path_(path) {}
   //创建，backend创建一个服务实例，就会创建一个对应的TNNProcessor
   static bool Create(const std::string &name,
-                      const int device_id,
-                      const std::string &path,
-                      std::shared_ptr<TNNProcessor> &processor);
+                     const int device_id,
+                     const std::string &path,
+                     std::shared_ptr<TNNProcessor> &processor);
 
   //(暂时弃用)根据input的值得到输出，并将*output指向输出。逻辑为转换指针为TNN_NS::Mat格式，前向计算，然后将结果转换为指针
   // bool Run(const void *input, void **output);
@@ -38,20 +39,24 @@ public:
   bool SetInputMat(const void *input_buffer, const std::string &input_name, const std::vector<int> &nchw); 
   //根据output_mat和output_name设置buffer，shape，dims_cout,byte_size
   bool GetOutput(void **output_buffer,
-                long **output_shape,
-                int *output_dims_count,
-                int *output_byte_size,
-                const std::string &output_name); 
+                 long **output_shape,
+                 int *output_dims_count,
+                 int *output_byte_size,
+                 const std::string &output_name); 
   //运行，从input_mat得到output_mat
   bool Forward(); 
-  //未来工作，输入张量reshape
-  bool Reshape(const TNN_NS::InputShapesMap& inputs) {LOGE("TNN_FOR_TRITION::Reshape is not implemented!\n"); return false;}
+  //自动reshape，逻辑：
+  //如果当前request_input_shape_map_ > instance_input_shape_map_，调整instance_input_shape_map_并重新init
+  //如果当前request_input_shape_map_ <= instance_input_shape_map_ 则只调用instance_自带的reshape
+  bool AutoReshape(); 
+
+  //未来工作，手动reshape，输入张量reshape  
+  bool ManualReshape(const TNN_NS::InputShapesMap& inputs) {LOGE("TNN_FOR_TRITION::ManualReshape is not implemented!\n"); return false;}
 
 private:
 
   //TNN instance的Init，传入proto内容，模型内容，链接库目录，计算单元，在create时调用
-  virtual TNN_NS::Status Init(const std::string &proto_content, const std::string &model_content,
-                              const std::string &library_path, TNNComputeUnits units,
+  virtual TNN_NS::Status Init(TNNComputeUnits units,
                               const TNN_NS::InputShapesMap &input_shape = TNN_NS::InputShapesMap());
   //（暂时弃用）TNN instance的前向计算，在Run时调用
   // virtual TNN_NS::Status Forward(const std::shared_ptr<TNN_NS::Mat> input, 
@@ -68,6 +73,7 @@ private:
   // 来自triton的数据
   const std::string name_;
   const int device_id_;
+  const std::string path_; 
   TNN_NS::InputShapesMap instance_input_shape_map_; 
   TNN_NS::InputShapesMap request_input_shape_map_; 
 
