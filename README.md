@@ -30,7 +30,7 @@ python3 image_client_face_detection.py pics/test_face.jpg
 ```
 
 由于classification使用squeezeNet目前只支持224X224的图片大小
-而classification支持特定几种图片大小
+而face_detection支持特定几种图片大小
 model和proto文件来源：https://github.com/Tencent/TNN/tree/master/model
 该demo只会将模型init成目前出现过的最大的shape，并且将input_shape设置为当前图片的shape，然后强行运行网络，成功与否由网络结构决定
 
