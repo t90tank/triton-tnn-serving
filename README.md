@@ -71,6 +71,12 @@ TNN-serving正式上线后，TNN编译得到得动态链接库libTNN.so和本项
 
 TODO
 
+# BUGS
+
+- 某些时候同时init会报错，无法复现
+- 执行命令 python3 image_client_face_detection.py pics/face_216.jpg 时，会没有任何提示地崩溃，目前以确定错误在TNNProcessor.cc的92行中的auto status = instance_->SetInputMat(input_mat, GetConvertParam(input_name), input_name);  TNN内部崩溃，怀疑和TNN版本太旧有关
+- 在设置输入张量size后输出size并没有变化，可能和TNN某些机制相关
+
 # 其他功能
 
 - **全新feature（待定）** 网络将根据输入张量的改变动态调整，具体逻辑可参考TNNProcessor.cc里的AutoReshape

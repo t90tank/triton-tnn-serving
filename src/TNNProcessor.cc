@@ -89,7 +89,7 @@ bool TNNProcessor::Create(const std::string &name,
 bool TNNProcessor::SetInputMat(const void *input_buffer, const std::string &input_name, const std::vector<int> &nchw) {
   request_input_shape_map_[input_name] = nchw; 
   auto input_mat = std::make_shared<TNN_NS::Mat>(TNN_NS::DEVICE_ARM, TNN_NS::N8UC3, nchw, const_cast<void *>(input_buffer)); 
-  auto status = instance_->SetInputMat(input_mat, GetConvertParam(input_name));   
+  auto status = instance_->SetInputMat(input_mat, GetConvertParam(input_name), input_name);  
   return status == TNN_NS::TNN_OK; 
 }
 

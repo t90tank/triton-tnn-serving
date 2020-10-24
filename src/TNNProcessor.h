@@ -61,11 +61,18 @@ private:
   //（暂时弃用）TNN instance的前向计算，在Run时调用
   // virtual TNN_NS::Status Forward(const std::shared_ptr<TNN_NS::Mat> input, 
   //                                 std::shared_ptr<TNN_NS::Mat> &output);    
+
   //根据输入名称得到图形变换的参数，未来将通过配置或其他方式加载 by XiGao
+  //现在根据TNN开源demo提供的参数转换，通过input名称来分辨
   TNN_NS::MatConvertParam GetConvertParam(std::string input_name) {
     TNN_NS::MatConvertParam input_cvt_param;
     input_cvt_param.scale = {1.0 / (255 * 0.229), 1.0 / (255 * 0.224), 1.0 / (255 * 0.225), 0.0};
     input_cvt_param.bias = {-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225, 0.0};
+    
+    if (input_name == "input") {
+      input_cvt_param.scale = {1.0 / 128, 1.0 / 128, 1.0 / 128, 0.0};
+      input_cvt_param.bias  = {-127.0 / 128, -127.0 / 128, -127.0 / 128, 0.0};
+    }
     return input_cvt_param; 
   }
 
