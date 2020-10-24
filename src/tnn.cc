@@ -190,6 +190,7 @@ ModelState::ValidateModelConfig()
   RETURN_IF_ERROR(model_config_.MemberAsArray("output", &outputs));
 
   //TNNDEMO 无需判断下述逻辑
+  //TODO 验证下input是否满足条件
 
   // // There must be 1 input and 1 output.
   // RETURN_ERROR_IF_FALSE(
@@ -331,7 +332,7 @@ class ModelInstanceState {
 
 //TNNDEMO 加载模型的实现，直接采用构造函数并传递path字符串
 TRITONSERVER_Error* ModelInstanceState::CreateTNNProcessor() {
-  //get path
+  //得到path
   TRITONBACKEND_ArtifactType artifatct_type; 
   const char *path = ""; 
   RETURN_IF_ERROR(
@@ -341,8 +342,6 @@ TRITONSERVER_Error* ModelInstanceState::CreateTNNProcessor() {
   ss<<path<<'/'<<model_state_->Version(); 
   std::string path_version; 
   ss>>path_version; 
-
-  // auto input_shapes_map = model_state_->GetInputShape(); 
 
   RETURN_ERROR_IF_FALSE(
       TNN_FOR_TRITION::TNNProcessor::Create(name_, 
@@ -800,7 +799,7 @@ TRITONBACKEND_ModelInstanceExecute(
               request, input_name, in_buffer.data(),
               &input_byte_size));
 
-      //通过input_shape和input_dims_count还原nchw
+      //通过input_shape和input_dims_count还原nchw，注意这里还没有batch，我们手工添加一个batchsize:n=1
       std::vector<int> nchw; 
       for (size_t i = 0; i < input_dims_count; ++i) 
         nchw.push_back(input_shape[i]); 
@@ -901,7 +900,8 @@ TRITONBACKEND_ModelInstanceExecute(
             TRITONBACKEND_OutputBuffer(
                 output, &output_buffer, output_byte_size, &output_memory_type,
                 &output_memory_type_id));
-              
+        
+        //将output_TNN复制到output_buffer
         memcpy(output_buffer, output_TNN, output_byte_size); 
       }
     }

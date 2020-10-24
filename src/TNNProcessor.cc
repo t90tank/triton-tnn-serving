@@ -28,7 +28,13 @@ bool TNNProcessor::Create(const std::string &name,
                           const int device_id, 
                           const std::string &path,
                           std::shared_ptr<TNNProcessor> &processor) {
-  processor = std::make_shared<TNNProcessor>(name, device_id, path);
+  std::string proto_content = fdLoadFile(path + "/proto.tnnproto"); 
+  std::string model_content = fdLoadFile(path + "/model.tnnmodel");
+  std::string library_path = path; 
+  processor = std::make_shared<TNNProcessor>(name, device_id, path, 
+                                             proto_content,
+                                             model_content,
+                                             library_path);
   auto status = processor->Init(TNNComputeUnitsCPU);
   if (status != TNN_NS::TNN_OK) {
     LOGE( "Unable to load following files :\n");
@@ -39,52 +45,68 @@ bool TNNProcessor::Create(const std::string &name,
   return true;
 }
 
-// bool TNNProcessor::Run(const void *input, void **output) {
-//   auto image_mat = std::make_shared<TNN_NS::Mat>(TNN_NS::DEVICE_ARM, TNN_NS::N8UC3, nchw_, const_cast<void *>(input));
-//   if (image_mat == nullptr) {
-//     LOGE("TNN load input tensor from triton input failed!\n");
-//     return false; 
-//   }
-//   auto status = Forward(image_mat, output_mat); 
-//   if (status != TNN_NS::TNN_OK) {
-//     LOGE("Run TNN net failed %d\n", (int)status); 
-//     return false; 
-//   }
-//   if (output_mat == nullptr) {
-//     LOGE("Output_mat is empty!\n"); 
-//     return false; 
-//   }
-//   *output = output_mat.get()->GetData(); 
-//   return true; 
-// }
+TNN_NS::Status TNNProcessor::Init(TNNComputeUnits units, 
+                                  const TNN_NS::InputShapesMap &input_shape) {
 
-// bool TNNProcessor::GetOutputShape(long **output_shape, int *output_dims_count) {
-//   if (!output_mat) {
-//     LOGE("Can not GetOutputShape before sucessfully run!\n"); 
-//     return false; 
-//   }
+                                
+  //网络初始化
+  TNN_NS::Status status;
+  if (!net_) {
+    TNN_NS::ModelConfig config;
+#if TNN_SDK_USE_NCNN_MODEL
+    config.model_type = TNN_NS::MODEL_TYPE_NCNN;
+#else
+    config.model_type = TNN_NS::MODEL_TYPE_TNN;
+#endif
+    config.params = {proto_content_, model_content_};
 
-//   //将vector<int>转化为vector<long>，建议后面和triton商量改变接口，不然浪费时间和效率
-//   //by XiGao
-//   output_shape_buffer.clear(); 
-//   for (auto i : output_mat->GetDims()) output_shape_buffer.push_back(i);
-//   *output_shape = output_shape_buffer.data(); 
-//   *output_dims_count = output_mat.get()->GetDims().size(); 
-//   return true; 
-// }
+    auto net = std::make_shared<TNN_NS::TNN>();
+    status = net->Init(config);
+    if (status != TNN_NS::TNN_OK) {
+      LOGE("instance.net init failed %d\n", (int)status);
+      return status;
+    }
+    net_ = net;
+  }
 
-// bool TNNProcessor::GetOutputSize(int *output_byte_size) const {
-//   if (!output_mat) {
-//     LOGE("Can not GetOutputSize before sucessfully run!\n"); 
-//     return false; 
-//   }
-//   auto output_shape_ = output_mat->GetDims(); 
-//   int total = 1; 
-//   for (auto i : output_shape_) total *= i; 
-//   //似乎目前Mat里面都是float类型？没有看到如何定义Mat数据类型？
-//   *output_byte_size = total * sizeof(float); 
-//   return true; 
-// }
+  // network init
+  device_type_ = TNN_NS::DEVICE_ARM;
+  if (units >= TNNComputeUnitsGPU) {
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    device_type_ = TNN_NS::DEVICE_METAL;
+#else
+    device_type_ = TNN_NS::DEVICE_OPENCL;
+#endif
+  }
+
+  //创建实例instance
+  TNN_NS::NetworkConfig network_config;
+  network_config.library_path = {library_path_};
+  network_config.device_type = device_type_;
+  auto instance = net_->CreateInst(network_config, status, input_shape);
+  if (status != TNN_NS::TNN_OK || !instance)
+  {
+    // try device_arm
+    if (units >= TNNComputeUnitsGPU)
+    {
+      device_type_ = TNN_NS::DEVICE_ARM;
+      network_config.device_type = TNN_NS::DEVICE_ARM;
+      instance = net_->CreateInst(network_config, status, input_shape);
+    }
+  }
+  instance_ = instance;
+
+  //清空request_input_shape_map_
+  request_input_shape_map_.clear(); 
+  //我们可以根据网络得到instance_intput_shape_map_，这个决定了能处理的图片大小的上限
+  instance_input_shape_map_.clear(); 
+  TNN_NS::BlobMap input_blobs_map; 
+  status  = instance_->GetAllInputBlobs(input_blobs_map); 
+  for (auto input_blob : input_blobs_map) 
+    instance_input_shape_map_[input_blob.first] = (input_blob.second)->GetBlobDesc().dims; 
+
+  return TNN_NS::TNN_OK;
+}
 
 bool TNNProcessor::SetInputMat(const void *input_buffer, const std::string &input_name, const std::vector<int> &nchw) {
   request_input_shape_map_[input_name] = nchw; 
@@ -129,7 +151,6 @@ bool TNNProcessor::Forward() {
   // instance_->Reshape(*instance_input_shape_map_); 
   return true; 
 }
-
 
 bool TNNProcessor::AutoReshape() {
   //判断是否需要重新init，如果需要，调整instance_input_shape_map_
@@ -182,93 +203,5 @@ bool TNNProcessor::ManualReshape(const TNN_NS::InputShapesMap& inputs) {
   }
   return true; 
 }
-
-TNN_NS::Status TNNProcessor::Init(TNNComputeUnits units, 
-                                  const TNN_NS::InputShapesMap &input_shape) {
-
-                                    
-  std::string proto_content = fdLoadFile(path_ + "/proto.tnnproto"); 
-  std::string model_content = fdLoadFile(path_ + "/model.tnnmodel");
-  std::string library_path = ""; 
-  //网络初始化
-  TNN_NS::Status status;
-  if (!net_) {
-    TNN_NS::ModelConfig config;
-#if TNN_SDK_USE_NCNN_MODEL
-    config.model_type = TNN_NS::MODEL_TYPE_NCNN;
-#else
-    config.model_type = TNN_NS::MODEL_TYPE_TNN;
-#endif
-    config.params = {proto_content, model_content};
-
-    auto net = std::make_shared<TNN_NS::TNN>();
-    status = net->Init(config);
-    if (status != TNN_NS::TNN_OK) {
-      LOGE("instance.net init failed %d\n", (int)status);
-      return status;
-    }
-    net_ = net;
-  }
-
-  // network init
-  device_type_ = TNN_NS::DEVICE_ARM;
-  if (units >= TNNComputeUnitsGPU) {
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-    device_type_ = TNN_NS::DEVICE_METAL;
-#else
-    device_type_ = TNN_NS::DEVICE_OPENCL;
-#endif
-  }
-
-  //创建实例instance
-  TNN_NS::NetworkConfig network_config;
-  network_config.library_path = {library_path};
-  network_config.device_type = device_type_;
-  auto instance = net_->CreateInst(network_config, status, input_shape);
-  if (status != TNN_NS::TNN_OK || !instance)
-  {
-    // try device_arm
-    if (units >= TNNComputeUnitsGPU)
-    {
-      device_type_ = TNN_NS::DEVICE_ARM;
-      network_config.device_type = TNN_NS::DEVICE_ARM;
-      instance = net_->CreateInst(network_config, status, input_shape);
-    }
-  }
-  instance_ = instance;
-
-  //清空request_input_shape_map_
-  request_input_shape_map_.clear(); 
-  //我们可以根据网络得到instance_intput_shape_map_，这个决定了能处理的图片大小的上限
-  instance_input_shape_map_.clear(); 
-  TNN_NS::BlobMap input_blobs_map; 
-  status  = instance_->GetAllInputBlobs(input_blobs_map); 
-  for (auto input_blob : input_blobs_map) 
-    instance_input_shape_map_[input_blob.first] = (input_blob.second)->GetBlobDesc().dims; 
-
-  return TNN_NS::TNN_OK;
-}
-
-// TNN_NS::Status TNNProcessor::Forward(const std::shared_ptr<TNN_NS::Mat> input,
-//                                     std::shared_ptr<TNN_NS::Mat> &output) {
-
-//   // step 1. set input mat
-//   TNN_NS::MatConvertParam input_cvt_param;
-//   input_cvt_param.scale = {1.0 / (255 * 0.229), 1.0 / (255 * 0.224), 1.0 / (255 * 0.225), 0.0};
-//   input_cvt_param.bias = {-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225, 0.0};
-
-//   auto status = instance_->SetInputMat(input, input_cvt_param);
-//   RETURN_ON_NEQ(status, TNN_NS::TNN_OK);
-
-//   // step 2. Forward
-//   status = instance_->ForwardAsync(nullptr);
-//   RETURN_ON_NEQ(status, TNN_NS::TNN_OK);
-
-//   // step 3. get output mat
-//   status = instance_->GetOutputMat(output);
-//   RETURN_ON_NEQ(status, TNN_NS::TNN_OK);
-
-//   return TNN_NS::TNN_OK;
-// }
 
 } // namespace TNN_FOR_TRITION
