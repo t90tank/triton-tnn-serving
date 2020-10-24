@@ -88,10 +88,6 @@ bool TNNProcessor::Create(const std::string &name,
 
 bool TNNProcessor::SetInputMat(const void *input_buffer, const std::string &input_name, const std::vector<int> &nchw) {
   request_input_shape_map_[input_name] = nchw; 
-  std::cout<<"["; 
-  for (auto i : nchw)  
-    std::cout<<i<<','; 
-  std::cout<<"]\n"; 
   auto input_mat = std::make_shared<TNN_NS::Mat>(TNN_NS::DEVICE_ARM, TNN_NS::N8UC3, nchw, const_cast<void *>(input_buffer)); 
   auto status = instance_->SetInputMat(input_mat, GetConvertParam(input_name));   
   return status == TNN_NS::TNN_OK; 
@@ -134,7 +130,9 @@ bool TNNProcessor::Forward() {
   return true; 
 }
 
+
 bool TNNProcessor::AutoReshape() {
+  //判断是否需要重新init，如果需要，调整instance_input_shape_map_
   bool need_to_reinit = false; 
   for (auto iter : request_input_shape_map_) {
     auto input_name = iter.first; 
@@ -144,7 +142,9 @@ bool TNNProcessor::AutoReshape() {
         need_to_reinit = true; 
       }
   }
+
   if (need_to_reinit) {
+    //如果当前request_input_shape_map_ > instance_input_shape_map_，重新init
     printf("Need to reinit the network bacause the image is larger than before.\n"); 
     auto status = instance_->DeInit(); 
     if (status != TNN_NS::TNN_OK) {
@@ -158,11 +158,27 @@ bool TNNProcessor::AutoReshape() {
     }
   }
   else {
+    //如果当前request_input_shape_map_ <= instance_input_shape_map_ 则只调用instance_自带的reshape
     auto status = instance_->Reshape(request_input_shape_map_); 
     if (status != TNN_NS::TNN_OK) {
       LOGE("instance_->Reshape failed %d\n", (int)status); 
       return false; 
     }
+  }
+  return true; 
+}
+
+bool TNNProcessor::ManualReshape(const TNN_NS::InputShapesMap& inputs) {
+  instance_input_shape_map_ = inputs; 
+  auto status = instance_->DeInit(); 
+  if (status != TNN_NS::TNN_OK) {
+    LOGE("instance_->DeInit() failed %d\n", (int)status); 
+    return false; 
+  }
+  status = Init(TNNComputeUnitsCPU, instance_input_shape_map_); 
+  if (status != TNN_NS::TNN_OK) {
+    LOGE("Auto reinit failed %d\n", (int)status); 
+    return false; 
   }
   return true; 
 }

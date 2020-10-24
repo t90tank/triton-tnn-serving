@@ -23,23 +23,22 @@ docker run -p8000:8000 -p8001:8001 -p8002:8002 -it -v $(pwd)/my_models:/models -
 ### python客户端（未完善功能）：
 
 运行客户端
+```
+cd tnnserving_client
+python3 image_client_classification.py pics/dog.png
+python3 image_client_face_detection.py pics/test_face.jpg
+```
 
-```
-python3 image_client.py
-```
+由于classification使用squeezeNet目前只支持224X224的图片大小
+而classification支持特定几种图片大小其他图片需要手动调整大小后再发送
+model和proto文件来源：https://github.com/Tencent/TNN/tree/master/model
 
-想要查看自定义图片分类结果
-```
-python3 image_client.py pics/dog.png
-```
-目前只支持224X224的图片大小，其他图片需要手动调整大小后再发送
+多模型加载同时init曾经出错过，但目前已经无法复现该BUG
 
 # 编译tnn-backend
 
-由于只支持CPU的triton-inference-server backend源码编译上存在问题，建议使用smartbuild.sh，该脚本会自动将能编译通过的backend_common.cc复制到cmake拉取的文件夹中以修正编译错误。
-
 ```
-smartbuild.sh
+./build.sh
 ```
 编译结果为build/install/backends/tnn/libtriton_tnn.so
 目前smartbuild.sh会默认将新生成的so复制到./my_libs下覆盖原本的库
@@ -73,6 +72,7 @@ TODO
 
 # 其他功能
 
+- **全新feature（待定）** 网络将根据输入张量的改变动态调整，具体逻辑可参考TNNProcessor.cc里的AutoReshape
 - build.sh将使用默认方法编译（一般需要手动修改编译错误），comp.sh不删除build目录直接编译
 - 在tnnserving_client中有auto-run.sh会不断运行image_client.py以确定是否有内存泄漏的情况
 - 在运行后在http://localhost:8002/metrics 可以查看其他指标（尚未测试过）

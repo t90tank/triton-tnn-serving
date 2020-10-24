@@ -89,7 +89,7 @@ class ModelState {
   // Validate that model configuration is supported by this backend.
   TRITONSERVER_Error* ValidateModelConfig();
   
-  //TNNDEMO Get the nchw from config for TNN
+  //TNNDEMO 暂时弃用Get the nchw from config for TNN，
   // std::shared_ptr<TNN_NS::InputShapesMap> GetInputShape(); 
 
  private:
@@ -229,7 +229,7 @@ ModelState::ValidateModelConfig()
   return nullptr;  // success
 }
 
-//TNNDEMO 因为model_config_是private类型，返回input_size需要特殊的实现
+//TNNDEMO 暂时弃用 因为model_config_是private类型，返回input_size需要特殊的实现
 // std::shared_ptr<TNN_NS::InputShapesMap> ModelState::GetInputShape() {
 //   //get input shape from config
 //   auto input_shape_map_ = std::make_shared<TNN_NS::InputShapesMap>(); 
@@ -596,12 +596,10 @@ TRITONBACKEND_ModelInstanceInitialize(TRITONBACKEND_ModelInstance* instance)
 
   // With each instance we create a ModelInstanceState object and
   // associate it with the TRITONBACKEND_ModelInstance.
-  std::cout<<name<<" start!\n"; 
   ModelInstanceState* instance_state;
   RETURN_IF_ERROR(
       ModelInstanceState::Create(model_state, instance, &instance_state));
       
-  std::cout<<name<<" success!\n"; 
   RETURN_IF_ERROR(TRITONBACKEND_ModelInstanceSetState(
       instance, reinterpret_cast<void*>(instance_state)));
 
@@ -643,9 +641,6 @@ TRITONBACKEND_ModelInstanceExecute(
     TRITONBACKEND_ModelInstance* instance, TRITONBACKEND_Request** requests,
     const uint32_t request_count)
 {
-  LOG_MESSAGE(
-      TRITONSERVER_LOG_INFO,
-      "Hello, I am executing!");
   // Triton will not call this function simultaneously for the same
   // 'instance'. But since this backend could be used by multiple
   // instances from multiple models the implementation needs to handle
@@ -807,10 +802,8 @@ TRITONBACKEND_ModelInstanceExecute(
 
       //通过input_shape和input_dims_count还原nchw
       std::vector<int> nchw; 
-      for (size_t i = 0; i < input_dims_count; ++i) {
-        std::cout<<"new_feature "<<input_shape[i]<<std::endl;
+      for (size_t i = 0; i < input_dims_count; ++i) 
         nchw.push_back(input_shape[i]); 
-      }
       nchw.push_back(1); 
       std::reverse(nchw.begin(), nchw.end()); 
             
@@ -845,7 +838,6 @@ TRITONBACKEND_ModelInstanceExecute(
           TRITONSERVER_ERROR_UNKNOWN,
           std::string("instance_state->GetProcessor()->AutoReshape() unsuccessful!") ); 
 
-      std::cout<<"Running!\n"; 
       RETURN_ERROR_IF_FALSE(
           instance_state->GetProcessor()->Forward(), 
           TRITONSERVER_ERROR_UNKNOWN,

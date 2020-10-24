@@ -50,8 +50,8 @@ public:
   //如果当前request_input_shape_map_ <= instance_input_shape_map_ 则只调用instance_自带的reshape
   bool AutoReshape(); 
 
-  //未来工作，手动reshape，输入张量reshape  
-  bool ManualReshape(const TNN_NS::InputShapesMap& inputs) {LOGE("TNN_FOR_TRITION::ManualReshape is not implemented!\n"); return false;}
+  //未来接口，手动reshape，输入张量reshape，将其reshpe
+  bool ManualReshape(const TNN_NS::InputShapesMap& inputs); 
 
 private:
 
@@ -74,7 +74,10 @@ private:
   const std::string name_;
   const int device_id_;
   const std::string path_; 
+
+  //当前网络实例的shape，每次init时重置
   TNN_NS::InputShapesMap instance_input_shape_map_; 
+  //当前request的shape，每次SetInputMat时修改其中的值
   TNN_NS::InputShapesMap request_input_shape_map_; 
 
   // TNN模型所需数据
