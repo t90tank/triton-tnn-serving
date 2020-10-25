@@ -108,6 +108,11 @@ TNN_NS::Status TNNProcessor::Init(TNNComputeUnits units,
   return TNN_NS::TNN_OK;
 }
 
+TNNProcessor::~TNNProcessor() {
+  instance_->DeInit(); 
+  net_->DeInit(); 
+}
+
 bool TNNProcessor::SetInputMat(const void *input_buffer, const std::string &input_name, const std::vector<int> &nchw) {
   request_input_shape_map_[input_name] = nchw; 
   auto input_mat = std::make_shared<TNN_NS::Mat>(TNN_NS::DEVICE_ARM, TNN_NS::N8UC3, nchw, const_cast<void *>(input_buffer)); 

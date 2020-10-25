@@ -29,6 +29,7 @@ public:
                 proto_content_(proto_content),
                 model_content_(model_content),
                 library_path_(library_path) {}
+  ~TNNProcessor();
   //创建，backend创建一个服务实例，就会创建一个对应的TNNProcessor
   static bool Create(const std::string &name,
                      const int device_id,
