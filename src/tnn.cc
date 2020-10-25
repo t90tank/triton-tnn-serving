@@ -344,10 +344,10 @@ TRITONSERVER_Error* ModelInstanceState::CreateTNNProcessor() {
   ss>>path_version; 
 
   RETURN_ERROR_IF_FALSE(
-      TNN_FOR_TRITION::TNNProcessor::Create(name_, 
+      TNN_FOR_TRITION::TNNProcessor::Create(tnn_processor_,
+                                            name_, 
                                             device_id_, 
-                                            std::string(path_version), 
-                                            tnn_processor_), 
+                                            std::string(path_version)), 
       TRITONSERVER_ERROR_NOT_FOUND, 
       std::string("Can not create TNNProcessor using path '") + 
       std::string(path_version) +

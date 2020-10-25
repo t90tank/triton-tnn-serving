@@ -24,17 +24,20 @@ public:
                const std::string &path,
                const std::string &proto_content,
                const std::string &model_content, 
-               const std::string &library_path) : 
+               const std::string &library_path,
+               const TNNComputeUnits units) : 
                 name_(name), device_id_(device_id), path_(path),
                 proto_content_(proto_content),
                 model_content_(model_content),
-                library_path_(library_path) {}
+                library_path_(library_path),
+                units_(units){}
   ~TNNProcessor();
   //创建，backend创建一个服务实例，就会创建一个对应的TNNProcessor
-  static bool Create(const std::string &name,
+  static bool Create(std::shared_ptr<TNNProcessor> &processor,
+                     const std::string &name,
                      const int device_id,
                      const std::string &path,
-                     std::shared_ptr<TNNProcessor> &processor);
+                     const TNNComputeUnits units = TNNComputeUnitsCPU);
 
   //根据input_buffer和input_name设置input_mat
   bool SetInputMat(const void *input_buffer, const std::string &input_name, const std::vector<int> &nchw); 
@@ -57,8 +60,8 @@ public:
 private:
 
   //TNN instance的Init，传入proto内容，模型内容，链接库目录，计算单元，在create时调用
-  virtual TNN_NS::Status Init(TNNComputeUnits units,
-                              const TNN_NS::InputShapesMap &input_shape = TNN_NS::InputShapesMap()); 
+  TNN_NS::Status Init(const TNN_NS::InputShapesMap &input_shape = TNN_NS::InputShapesMap()); 
+  TNN_NS::Status DeInit(); 
 
   //根据输入名称得到图形变换的参数，未来将通过配置或其他方式加载 by XiGao
   //现在根据TNN开源demo提供的参数转换，通过input名称来分辨
@@ -84,6 +87,9 @@ private:
   const std::string proto_content_;
   const std::string model_content_; 
   const std::string library_path_;
+
+  //运行的单元
+  const TNNComputeUnits units_; 
 
   //当前网络实例的shape，每次init时重置
   TNN_NS::InputShapesMap instance_input_shape_map_; 

@@ -24,18 +24,20 @@ std::string fdLoadFile(std::string path) {
   }
 }
 
-bool TNNProcessor::Create(const std::string &name,
-                          const int device_id, 
+bool TNNProcessor::Create(std::shared_ptr<TNNProcessor> &processor,
+                          const std::string &name,
+                          const int device_id,
                           const std::string &path,
-                          std::shared_ptr<TNNProcessor> &processor) {
+                          const TNNComputeUnits units) {
   std::string proto_content = fdLoadFile(path + "/proto.tnnproto"); 
   std::string model_content = fdLoadFile(path + "/model.tnnmodel");
   std::string library_path = path; 
   processor = std::make_shared<TNNProcessor>(name, device_id, path, 
                                              proto_content,
                                              model_content,
-                                             library_path);
-  auto status = processor->Init(TNNComputeUnitsCPU);
+                                             library_path,
+                                             units);
+  auto status = processor->Init();
   if (status != TNN_NS::TNN_OK) {
     LOGE( "Unable to load following files :\n");
     LOGE( "%s/proto.tnnproto\n", path.c_str()); 
@@ -45,19 +47,19 @@ bool TNNProcessor::Create(const std::string &name,
   return true;
 }
 
-TNN_NS::Status TNNProcessor::Init(TNNComputeUnits units, 
-                                  const TNN_NS::InputShapesMap &input_shape) {
+TNN_NS::Status TNNProcessor::Init(const TNN_NS::InputShapesMap &input_shape) {
 
                                 
   //网络初始化
   TNN_NS::Status status;
   if (!net_) {
     TNN_NS::ModelConfig config;
-#if TNN_SDK_USE_NCNN_MODEL
-    config.model_type = TNN_NS::MODEL_TYPE_NCNN;
-#else
+    //NCNN模型相关，可以先不管
+// #if TNN_SDK_USE_NCNN_MODEL
+//     config.model_type = TNN_NS::MODEL_TYPE_NCNN;
+// #else
     config.model_type = TNN_NS::MODEL_TYPE_TNN;
-#endif
+// #endif
     config.params = {proto_content_, model_content_};
 
     auto net = std::make_shared<TNN_NS::TNN>();
@@ -71,13 +73,15 @@ TNN_NS::Status TNNProcessor::Init(TNNComputeUnits units,
 
   // network init
   device_type_ = TNN_NS::DEVICE_ARM;
-  if (units >= TNNComputeUnitsGPU) {
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-    device_type_ = TNN_NS::DEVICE_METAL;
-#else
-    device_type_ = TNN_NS::DEVICE_OPENCL;
-#endif
-  }
+
+  //GPU NPU相关，可以先不管
+//   if (units >= TNNComputeUnitsGPU) {
+// #if defined(__APPLE__) && TARGET_OS_IPHONE
+//     device_type_ = TNN_NS::DEVICE_METAL;
+// #else
+//     device_type_ = TNN_NS::DEVICE_OPENCL;
+// #endif
+//   }
 
   //创建实例instance
   TNN_NS::NetworkConfig network_config;
@@ -87,7 +91,7 @@ TNN_NS::Status TNNProcessor::Init(TNNComputeUnits units,
   if (status != TNN_NS::TNN_OK || !instance)
   {
     // try device_arm
-    if (units >= TNNComputeUnitsGPU)
+    if (units_ >= TNNComputeUnitsGPU)
     {
       device_type_ = TNN_NS::DEVICE_ARM;
       network_config.device_type = TNN_NS::DEVICE_ARM;
@@ -108,9 +112,14 @@ TNN_NS::Status TNNProcessor::Init(TNNComputeUnits units,
   return TNN_NS::TNN_OK;
 }
 
+TNN_NS::Status TNNProcessor::DeInit() {
+  instance_ = nullptr; 
+  net_ = nullptr; 
+  return TNN_NS::TNN_OK; 
+}
+
 TNNProcessor::~TNNProcessor() {
-  instance_->DeInit(); 
-  net_->DeInit(); 
+  DeInit(); 
 }
 
 bool TNNProcessor::SetInputMat(const void *input_buffer, const std::string &input_name, const std::vector<int> &nchw) {
@@ -126,6 +135,10 @@ bool TNNProcessor::GetOutput(void **output_buffer,
                              int *output_byte_size,
                              const std::string &output_name) {
   auto status = instance_->GetOutputMat(output_mat, TNN_NS::MatConvertParam(), output_name);
+  if (status != TNN_NS::TNN_OK) {
+    LOGE("instance_->GetOutputMat() failed! %d\n", (int)status); 
+    return false; 
+  }
   if (output_mat == nullptr) {
     LOGE("Output_mat is empty!\n"); 
     return false; 
@@ -172,14 +185,14 @@ bool TNNProcessor::AutoReshape() {
   if (need_to_reinit) {
     //如果当前request_input_shape_map_ > instance_input_shape_map_，重新init
     printf("Need to reinit the network bacause the image is larger than before.\n"); 
-    auto status = instance_->DeInit(); 
+    auto status = DeInit(); 
     if (status != TNN_NS::TNN_OK) {
-      LOGE("instance_->DeInit() failed %d\n", (int)status); 
+      LOGE("DeInit() failed %d\n", (int)status); 
       return false; 
     }
-    status = Init(TNNComputeUnitsCPU, instance_input_shape_map_); 
+    status = Init(instance_input_shape_map_); 
     if (status != TNN_NS::TNN_OK) {
-      LOGE("Auto reinit failed %d\n", (int)status); 
+      LOGE("ReInit failed %d\n", (int)status); 
       return false; 
     }
   }
@@ -196,14 +209,14 @@ bool TNNProcessor::AutoReshape() {
 
 bool TNNProcessor::ManualReshape(const TNN_NS::InputShapesMap& inputs) {
   instance_input_shape_map_ = inputs; 
-  auto status = instance_->DeInit(); 
+  auto status = DeInit(); 
   if (status != TNN_NS::TNN_OK) {
-    LOGE("instance_->DeInit() failed %d\n", (int)status); 
+    LOGE("DeInit() failed %d\n", (int)status); 
     return false; 
   }
-  status = Init(TNNComputeUnitsCPU, instance_input_shape_map_); 
+  status = Init(instance_input_shape_map_); 
   if (status != TNN_NS::TNN_OK) {
-    LOGE("Auto reinit failed %d\n", (int)status); 
+    LOGE("ReInit failed %d\n", (int)status); 
     return false; 
   }
   return true; 
